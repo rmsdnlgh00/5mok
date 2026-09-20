@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "node:fs";
 import path from "node:path";
 import { getAllDishes, getTodaysDish } from "@/lib/dishSelector";
-import { normalizeWord, scoreAgainstRanking, scoreInRange } from "@/lib/similarity";
+import { normalizeWord, scoreAgainstRanking } from "@/lib/similarity";
 import type { DishRanking, GuessResult } from "@/lib/types";
 
 // 랭킹 JSON은 배포 후 바뀌지 않으므로 프로세스 메모리에 캐시해둔다.
@@ -71,30 +71,19 @@ export async function POST(req: NextRequest) {
       );
       if (index !== -1) {
         const entry = ranking.dishRanked[index];
-
-        // 점수 기준을 "정답 자신"까지 포함해서 잡는다. 그러지 않으면 가장 가까운
-        // 음식이 항상 100점을 받아 정답인 줄 착각하게 된다. 정답과의 유사도는
-        // 정의상 1.0 이므로 그 값을 분포의 최대값으로 넣어준다.
-        const withAnswer = (values: number[]) => [1, ...values];
+        // 값은 precompute 단계에서 이미 0~1로 정규화돼 있다(1.0 = 정답 자신).
+        const pct = (v: number) => Math.round(v * 1000) / 10;
 
         const result: GuessResult = {
           status: "dish-scored",
           guess: rawGuess,
           dishName: guessedDish.name,
-          score: scoreInRange(
-            entry.similarity,
-            withAnswer(ranking.dishRanked.map((d) => d.similarity))
-          ),
+          score: pct(entry.similarity),
           rank: index + 1,
           totalDishes: ranking.dishRanked.length,
-          nameScore: scoreInRange(
-            entry.nameSimilarity,
-            withAnswer(ranking.dishRanked.map((d) => d.nameSimilarity))
-          ),
-          ingredientScore: scoreInRange(
-            entry.profileSimilarity,
-            withAnswer(ranking.dishRanked.map((d) => d.profileSimilarity))
-          ),
+          nameScore: pct(entry.nameScore),
+          ingredientScore: pct(entry.ingredientScore),
+          sharedCount: entry.sharedCount,
         };
         return NextResponse.json(result);
       }

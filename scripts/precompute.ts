@@ -22,8 +22,44 @@ import { averageVector, cosineSimilarity } from "../lib/similarity";
 
 const ROOT = path.join(__dirname, "..");
 
-/** 음식 간 유사도에서 "이름"이 차지하는 비중 (나머지는 재료 프로필) */
-const NAME_WEIGHT = 0.5;
+/**
+ * 음식 간 유사도를 이루는 세 신호의 비중. 음식 63개로 비교해 고른 값이다.
+ *   같은 조리법 평균순위 5.76 / 재료 2개 이상 공유 평균순위 9.26  (둘 다 낮을수록 좋음)
+ * 직전 설정(이름 .5 / 프로필 .5 / 겹침 0)의 6.32 · 12.63 을 양쪽 모두에서 이긴다.
+ *
+ * 핵심은 OVERLAP 이다. 재료 평균 벡터(프로필)는 "실제로 같은 재료를 쓰는가"를
+ * 제대로 잡지 못한다 — 꽃게탕과 재료 5개를 공유하는 동태찌개가 상위에 오지 않았다.
+ * 두 음식의 재료 목록을 이미 알고 있으므로 겹치는 개수를 직접 세는 편이 정확하다.
+ */
+const WEIGHTS = {
+  /** 음식 이름끼리의 임베딩 유사도 — "찌개 ↔ 찌개"를 잡는다 */
+  name: 0.5,
+  /** 재료 평균 벡터끼리의 유사도 — 겹치는 재료가 없어도 결이 비슷하면 반응한다 */
+  profile: 0.1,
+  /** 재료 목록이 실제로 겹치는 비율(자카드) */
+  overlap: 0.4,
+};
+
+/**
+ * 세 신호는 값의 폭이 크게 다르다(코사인 0.85~0.99 vs 자카드 0~0.5). 그대로 더하면
+ * 가중치가 의미를 잃으므로 후보군 안에서 각각 0~1로 정규화한 뒤 섞는다.
+ *
+ * 이때 "정답 자신"의 값 1.0 을 최대값으로 포함시킨다. 그러지 않으면 가장 가까운
+ * 음식이 늘 만점을 받아 정답으로 착각하게 된다. 100점은 정답만 받는다.
+ */
+function normalizeAgainstAnswer(values: number[]): number[] {
+  const min = Math.min(1, ...values);
+  const range = 1 - min || 1e-9;
+  return values.map((v) => (v - min) / range);
+}
+
+/** 두 재료 목록이 겹치는 비율 (교집합 / 합집합) */
+function jaccard(a: string[], b: string[]): number {
+  const setB = new Set(b);
+  const shared = a.filter((x) => setB.has(x)).length;
+  const union = new Set([...a, ...b]).size;
+  return union === 0 ? 0 : shared / union;
+}
 const dishes = dishesData as Dish[];
 
 /** JSON 용량을 줄이려고 소수점 6자리로 자른다 (유사도에는 영향 없음) */
@@ -102,33 +138,40 @@ async function main() {
       }))
       .sort((a, b) => b.similarity - a.similarity);
 
-    // 다른 음식들과의 유사도. 이름 유사도와 재료 프로필 유사도를 절반씩 섞는다.
-    // (가중치 비교 결과 5:5 가 가장 자연스러웠다. 이름만 쓰면 떡볶이-된장찌개가
-    //  2위로 붙고, 재료만 쓰면 0.96~0.99 에 뭉쳐서 변별이 되지 않는다.)
-    const dishRanked: DishSimilarity[] = dishes
-      .filter((other) => other.id !== dish.id && profileMap.has(other.id))
-      .map((other) => {
-        const nameSimilarity = cosineSimilarity(
-          nameMap.get(dish.id)!,
-          nameMap.get(other.id)!
-        );
-        const profileSimilarity = cosineSimilarity(
-          profile,
-          profileMap.get(other.id)!
-        );
-        return {
-          dishId: other.id,
-          name: other.name,
-          similarity:
-            Math.round(
-              (NAME_WEIGHT * nameSimilarity +
-                (1 - NAME_WEIGHT) * profileSimilarity) *
-                1e6
-            ) / 1e6,
-          nameSimilarity: Math.round(nameSimilarity * 1e6) / 1e6,
-          profileSimilarity: Math.round(profileSimilarity * 1e6) / 1e6,
-        };
-      })
+    // 다른 음식들과의 유사도 (세 신호를 정규화해 WEIGHTS 로 섞는다)
+    const others = dishes.filter(
+      (other) => other.id !== dish.id && profileMap.has(other.id)
+    );
+    const rawName = others.map((o) =>
+      cosineSimilarity(nameMap.get(dish.id)!, nameMap.get(o.id)!)
+    );
+    const rawProfile = others.map((o) =>
+      cosineSimilarity(profile, profileMap.get(o.id)!)
+    );
+    const rawOverlap = others.map((o) => jaccard(dish.ingredients, o.ingredients));
+
+    const nName = normalizeAgainstAnswer(rawName);
+    const nProfile = normalizeAgainstAnswer(rawProfile);
+    const nOverlap = normalizeAgainstAnswer(rawOverlap);
+
+    const ownIngredients = new Set(dish.ingredients);
+    const dishRanked: DishSimilarity[] = others
+      .map((other, i) => ({
+        dishId: other.id,
+        name: other.name,
+        similarity:
+          Math.round(
+            (WEIGHTS.name * nName[i] +
+              WEIGHTS.profile * nProfile[i] +
+              WEIGHTS.overlap * nOverlap[i]) *
+              1e6
+          ) / 1e6,
+        nameScore: Math.round(nName[i] * 1e6) / 1e6,
+        ingredientScore: Math.round(nOverlap[i] * 1e6) / 1e6,
+        // 공통 재료는 개수만 남긴다. 이름을 그대로 보여주면 정답의 재료가
+        // 노출되어 게임이 끝나버린다.
+        sharedCount: other.ingredients.filter((x) => ownIngredients.has(x)).length,
+      }))
       .sort((x, y) => y.similarity - x.similarity);
 
     fs.writeFileSync(

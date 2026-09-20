@@ -20,6 +20,7 @@ type Guess =
       totalDishes: number;
       nameScore: number;
       ingredientScore: number;
+      sharedCount: number;
     }
   | {
       id: number;
@@ -93,6 +94,7 @@ export default function Home() {
             totalDishes: data.totalDishes,
             nameScore: data.nameScore,
             ingredientScore: data.ingredientScore,
+            sharedCount: data.sharedCount,
           },
         ]);
         setLastId(id);
@@ -227,6 +229,8 @@ export default function Home() {
                   {g.word}
                   <span className="sub-scores">
                     이름 {g.nameScore.toFixed(0)} · 재료 {g.ingredientScore.toFixed(0)}
+                    {g.sharedCount > 0 &&
+                      ` · 공통 재료 ${g.sharedCount}개`}
                   </span>
                 </span>
                 <span className="score" style={{ color: scoreColor(g.score) }}>

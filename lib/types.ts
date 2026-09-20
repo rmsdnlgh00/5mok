@@ -5,16 +5,21 @@ export type Dish = {
   ingredients: string[];
 };
 
-/** 다른 음식 하나에 대한 유사도 항목 */
+/**
+ * 다른 음식 하나에 대한 유사도 항목. 모든 값은 후보군 안에서 0~1로 정규화돼 있고,
+ * 1.0 은 정답 자신에게만 해당한다(= 100점은 정답만 받는다).
+ */
 export type DishSimilarity = {
   dishId: string;
   name: string;
-  /** 이름 유사도와 재료 프로필 유사도를 절반씩 섞은 최종 값 */
+  /** 이름·재료프로필·재료겹침 세 신호를 섞은 최종 값 */
   similarity: number;
-  /** "김치찌개" vs "된장찌개" 처럼 음식 이름끼리의 유사도 (찌개↔찌개를 잡아낸다) */
-  nameSimilarity: number;
-  /** 두 음식의 재료 평균 벡터끼리의 유사도 (두부·대파·마늘 공유를 잡아낸다) */
-  profileSimilarity: number;
+  /** 음식 이름끼리의 유사도 — "찌개 ↔ 찌개"를 잡아낸다 */
+  nameScore: number;
+  /** 재료 목록이 실제로 겹치는 정도 */
+  ingredientScore: number;
+  /** 공통으로 들어가는 재료의 개수 (어떤 재료인지는 정답 노출이라 담지 않는다) */
+  sharedCount: number;
 };
 
 // scripts/precompute.ts 가 만들어내는 파일 하나(음식 1개당)의 구조.
@@ -52,7 +57,8 @@ export type GuessResult =
       rank: number; // 다른 음식들 중 순위
       totalDishes: number;
       nameScore: number; // 이름만 봤을 때의 점수
-      ingredientScore: number; // 재료 구성만 봤을 때의 점수
+      ingredientScore: number; // 재료 겹침만 봤을 때의 점수
+      sharedCount: number; // 정답과 공통으로 들어가는 재료 개수
     }
   // 사전에도 없고 아는 음식도 아닌 단어. 임베딩 모델은 로컬 precompute 전용이라
   // 서버에 없으므로 실시간으로 벡터를 만들 수 없다.

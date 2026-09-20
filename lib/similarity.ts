@@ -33,18 +33,6 @@ export function averageVector(vectors: number[][]): number[] {
  * 꼬맨틀처럼 "상위 1000위 안에 들면 순위, 못 들면 비율만 표기"와 같은 느낌을
  * 내기 위해 rank도 함께 반환한다.
  */
-/**
- * 주어진 분포(all) 안에서 최고값을 100점, 최저값을 0점으로 놓고 선형 보간한 점수.
- * 서로 다른 종류의 유사도(재료 vs 음식)를 각자의 분포 기준으로 환산할 때 쓴다.
- */
-export function scoreInRange(similarity: number, all: number[]): number {
-  if (all.length === 0) return 0;
-  const max = Math.max(...all);
-  const min = Math.min(...all);
-  const range = max - min || 1e-9;
-  return Math.round(((similarity - min) / range) * 1000) / 10;
-}
-
 export function scoreAgainstRanking(
   similarity: number,
   ranked: { similarity: number }[]

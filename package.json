@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "precompute": "tsx scripts/precompute.ts"
+    "precompute": "tsx scripts/validate-data.ts && tsx scripts/precompute.ts",
+    "validate": "tsx scripts/validate-data.ts"
   },
   "dependencies": {
     "next": "14.2.35",

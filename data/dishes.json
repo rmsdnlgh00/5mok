@@ -1,0 +1,92 @@
+[
+  {
+    "id": "spinach-namul",
+    "name": "시금치무침",
+    "aliases": ["시금치나물"],
+    "ingredients": ["시금치", "마늘", "참기름", "소금", "깨", "대파"]
+  },
+  {
+    "id": "kimchi-jjigae",
+    "name": "김치찌개",
+    "aliases": [],
+    "ingredients": ["김치", "돼지고기", "두부", "대파", "마늘", "고춧가루", "멸치육수"]
+  },
+  {
+    "id": "doenjang-jjigae",
+    "name": "된장찌개",
+    "aliases": [],
+    "ingredients": ["된장", "두부", "애호박", "감자", "양파", "대파", "마늘", "멸치육수"]
+  },
+  {
+    "id": "japchae",
+    "name": "잡채",
+    "aliases": [],
+    "ingredients": ["당면", "시금치", "당근", "양파", "소고기", "표고버섯", "간장", "참기름"]
+  },
+  {
+    "id": "bibimbap",
+    "name": "비빔밥",
+    "aliases": [],
+    "ingredients": ["밥", "시금치", "당근", "고사리", "콩나물", "고추장", "계란", "소고기"]
+  },
+  {
+    "id": "bulgogi",
+    "name": "불고기",
+    "aliases": [],
+    "ingredients": ["소고기", "양파", "대파", "마늘", "간장", "설탕", "참기름", "배"]
+  },
+  {
+    "id": "samgyeopsal",
+    "name": "삼겹살",
+    "aliases": [],
+    "ingredients": ["돼지고기", "상추", "마늘", "쌈장", "깻잎"]
+  },
+  {
+    "id": "gyeranjjim",
+    "name": "계란찜",
+    "aliases": [],
+    "ingredients": ["계란", "물", "소금", "대파", "새우젓"]
+  },
+  {
+    "id": "miyeokguk",
+    "name": "미역국",
+    "aliases": [],
+    "ingredients": ["미역", "소고기", "참기름", "마늘", "국간장"]
+  },
+  {
+    "id": "kongnamulguk",
+    "name": "콩나물국",
+    "aliases": [],
+    "ingredients": ["콩나물", "대파", "마늘", "고춧가루", "소금"]
+  },
+  {
+    "id": "galbijjim",
+    "name": "갈비찜",
+    "aliases": [],
+    "ingredients": ["소갈비", "당근", "무", "간장", "설탕", "마늘", "배", "표고버섯"]
+  },
+  {
+    "id": "tteokbokki",
+    "name": "떡볶이",
+    "aliases": [],
+    "ingredients": ["떡", "어묵", "고추장", "대파", "설탕", "양배추"]
+  },
+  {
+    "id": "sundubu-jjigae",
+    "name": "순두부찌개",
+    "aliases": [],
+    "ingredients": ["순두부", "계란", "고춧가루", "대파", "마늘", "조개"]
+  },
+  {
+    "id": "jeyuk-bokkeum",
+    "name": "제육볶음",
+    "aliases": [],
+    "ingredients": ["돼지고기", "고추장", "양파", "대파", "마늘", "고춧가루", "설탕"]
+  },
+  {
+    "id": "budae-jjigae",
+    "name": "부대찌개",
+    "aliases": [],
+    "ingredients": ["햄", "소시지", "김치", "두부", "라면사리", "고춧가루", "대파"]
+  }
+]

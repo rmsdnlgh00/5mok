@@ -1,36 +1,67 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 재료맨틀 (food-mantle)
 
-## Getting Started
+꼬맨틀/세만틀 스타일의 "재료로 음식 맞추기" 게임. 재료를 입력하면 오늘의 정답 음식과의
+의미적 유사도를 0~100 점수로 알려주고, 음식 이름을 직접 맞히면 승리합니다.
 
-First, run the development server:
+## 동작 원리
+
+1. `data/dishes.json` 에 음식별 실제 재료 목록을 정의해둡니다.
+2. `npm run precompute` 를 실행하면:
+   - 모든 음식의 재료를 합쳐 "사전(vocabulary)"을 만들고 OpenAI 임베딩으로 변환합니다.
+   - 음식마다 자기 재료 임베딩의 평균("프로필 벡터")을 구합니다.
+   - 사전 전체 단어를 각 음식 프로필과의 유사도 순으로 정렬해
+     `data/rankings/<dishId>.json` 에 저장합니다.
+3. 서비스가 실행되는 동안, 사용자가 사전에 있는 단어를 입력하면 **미리 계산된 값**을
+   그대로 돌려주고(임베딩 API 호출 없음), 사전에 없는 새 단어를 입력했을 때만 그 단어
+   하나만 실시간으로 임베딩해서 프로필 벡터와 비교합니다. → 매 요청마다 임베딩을 계산하는
+   것보다 훨씬 빠르고 저렴합니다.
+4. 오늘의 정답 음식은 **KST 날짜 문자열을 해시**해서 결정하기 때문에, 별도 DB 없이도
+   모든 사용자가 하루 동안 같은 문제를 풉니다(자정에 자동으로 바뀜).
+
+## 로컬 실행
 
 ```bash
+npm install
+cp .env.example .env.local   # OPENAI_API_KEY 채워넣기
+npm run precompute            # data/rankings/*.json, data/vocab-embeddings.json 생성
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`npm run precompute` 는 **재료 데이터(data/dishes.json)를 바꿀 때마다** 다시 실행해야
+합니다. (재료를 추가/삭제하면 사전과 순위가 달라지기 때문)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Vercel 배포
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. GitHub에 푸시 후 Vercel에서 저장소 import
+2. Vercel 프로젝트 설정 → Environment Variables 에 `OPENAI_API_KEY` 추가
+3. `data/rankings/*.json` 과 `data/vocab-embeddings.json` 은 **로컬에서 미리 생성해서
+   같이 커밋**하세요 (Vercel 빌드 중에는 precompute를 실행하지 않습니다 — 매 배포마다
+   임베딩 API를 다시 호출하면 비용/시간이 들기 때문). 커밋해두면 배포 시 정적 파일처럼
+   바로 읽힙니다.
+4. 배포 후 재료 데이터를 바꾸면: 로컬에서 `npm run precompute` → 커밋 → 다시 배포.
 
-## Learn More
+## 음식 추가/수정하기
 
-To learn more about Next.js, take a look at the following resources:
+`data/dishes.json` 에 아래 형식으로 항목을 추가하고 `npm run precompute` 를 다시
+실행하면 됩니다.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```json
+{
+  "id": "unique-id",
+  "name": "음식 이름",
+  "aliases": ["다른 이름(선택)"],
+  "ingredients": ["재료1", "재료2", "재료3"]
+}
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 지금 버전에서 단순화한 부분 (다음에 개선하면 좋은 것들)
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **음식 15개 + 재료 사전 약 50~60단어**로 시작 구성만 잡아뒀습니다. 실제 서비스로
+  키우려면 음식/재료 수를 늘리고, 재료별 "핵심 재료 vs 부재료" 가중치를 주는 것도
+  고려해보세요.
+- 오탈자/유사어 처리(예: "고추장" vs "고추장양념")가 없습니다. 필요하면 사전에
+  동의어 매핑 테이블을 추가하는 게 좋습니다.
+- 하루 지난 정답을 보여주는 "어제의 정답" 기능, 공유하기(결과 이미지) 같은 건
+  포함하지 않았습니다.
+- 현재는 세션 저장이 없어서 새로고침하면 시도 기록이 날아갑니다. 필요하면
+  localStorage에 오늘 날짜 기준으로 저장하면 됩니다.

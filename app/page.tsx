@@ -35,6 +35,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [won, setWon] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [lastId, setLastId] = useState<number | null>(null);
 
   async function submitGuess(e: React.FormEvent) {
@@ -44,6 +45,7 @@ export default function Home() {
 
     setLoading(true);
     setError(null);
+    setNotice(null);
 
     try {
       const res = await fetch("/api/guess", {
@@ -55,6 +57,20 @@ export default function Home() {
 
       if (!res.ok) {
         setError(data.error ?? "오류가 발생했어요.");
+        return;
+      }
+
+      // 다른 음식 이름을 넣은 경우 — 오답이라고 명확히 알려준다
+      if (data.status === "wrong-dish") {
+        setNotice(`“${word}” 은(는) 오늘의 정답이 아니에요.`);
+        return;
+      }
+
+      // 사전에 없는 단어는 채점하지 않고 안내만 한다 (입력값은 그대로 두어 고칠 수 있게)
+      if (data.status === "unknown") {
+        setNotice(
+          `“${word}” 은(는) 아직 사전에 없는 재료예요. 다른 재료로 시도해보세요.`
+        );
         return;
       }
 
@@ -117,6 +133,7 @@ export default function Home() {
       </p>
 
       {error && <p className="error">{error}</p>}
+      {notice && <p className="notice">{notice}</p>}
 
       {won && (
         <div className="win-card">

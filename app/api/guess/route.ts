@@ -1,15 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "node:fs";
 import path from "node:path";
-import { getTodaysDish } from "@/lib/dishSelector";
-import { embedText } from "@/lib/openai";
-import { cosineSimilarity, normalizeWord, scoreAgainstRanking } from "@/lib/similarity";
+import { getAllDishes, getTodaysDish } from "@/lib/dishSelector";
+import { normalizeWord, scoreAgainstRanking } from "@/lib/similarity";
 import type { DishRanking, GuessResult } from "@/lib/types";
 
+// 랭킹 JSON은 배포 후 바뀌지 않으므로 프로세스 메모리에 캐시해둔다.
+const rankingCache = new Map<string, DishRanking | null>();
+
 function loadRanking(dishId: string): DishRanking | null {
+  const cached = rankingCache.get(dishId);
+  if (cached !== undefined) return cached;
+
   const file = path.join(process.cwd(), "data", "rankings", `${dishId}.json`);
-  if (!fs.existsSync(file)) return null;
-  return JSON.parse(fs.readFileSync(file, "utf-8")) as DishRanking;
+  const ranking = fs.existsSync(file)
+    ? (JSON.parse(fs.readFileSync(file, "utf-8")) as DishRanking)
+    : null;
+  rankingCache.set(dishId, ranking);
+  return ranking;
 }
 
 export async function POST(req: NextRequest) {
@@ -49,23 +57,28 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // 유사도는 precompute 단계에서 전부 계산해뒀다. 런타임에는 임베딩 모델을
+    // 올리지 않으므로(용량/콜드스타트), 사전에 있는 단어만 채점할 수 있다.
+    const cachedEntry = ranking.ranked.find((r) => normalizeWord(r.word) === guess);
+    if (!cachedEntry) {
+      // 사전에 없는 단어가 사실은 다른 음식 이름이라면, 재료로 착각한 것이 아니라
+      // 정답을 틀린 것이므로 다르게 안내한다. (재료이면서 음식인 "삼겹살" 같은
+      // 단어는 위 사전 조회에서 이미 채점되므로 여기까지 오지 않는다.)
+      const isKnownDish = getAllDishes().some(
+        (d) =>
+          normalizeWord(d.name) === guess ||
+          d.aliases.some((a) => normalizeWord(a) === guess)
+      );
+      const result: GuessResult = isKnownDish
+        ? { status: "wrong-dish", guess: rawGuess }
+        : { status: "unknown", guess: rawGuess };
+      return NextResponse.json(result);
+    }
+
     const isExactIngredient = dish.ingredients.some(
       (ing) => normalizeWord(ing) === guess
     );
-
-    // 사전에 이미 있는 단어면 미리 계산해둔 유사도를 그대로 쓰고(API 호출 없음),
-    // 사전에 없는 새 단어일 때만 실시간으로 임베딩을 계산해 프로필 벡터와 비교한다.
-    let similarity: number;
-
-    const cachedEntry = ranking.ranked.find((r) => normalizeWord(r.word) === guess);
-    if (cachedEntry) {
-      similarity = cachedEntry.similarity;
-    } else {
-      const guessVector = await embedText(rawGuess);
-      similarity = cosineSimilarity(guessVector, ranking.profile);
-    }
-
-    const { score, rank } = scoreAgainstRanking(similarity, ranking.ranked);
+    const { score, rank } = scoreAgainstRanking(cachedEntry.similarity, ranking.ranked);
 
     const result: GuessResult = {
       status: "scored",

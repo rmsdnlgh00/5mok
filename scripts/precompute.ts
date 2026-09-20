@@ -16,11 +16,14 @@ import fs from "node:fs";
 import path from "node:path";
 import dishesData from "../data/dishes.json";
 import extraIngredients from "../data/extra-ingredients.json";
-import type { Dish } from "../lib/types";
+import type { Dish, DishSimilarity } from "../lib/types";
 import { embedTexts } from "../lib/embed";
 import { averageVector, cosineSimilarity } from "../lib/similarity";
 
 const ROOT = path.join(__dirname, "..");
+
+/** 음식 간 유사도에서 "이름"이 차지하는 비중 (나머지는 재료 프로필) */
+const NAME_WEIGHT = 0.5;
 const dishes = dishesData as Dish[];
 
 /** JSON 용량을 줄이려고 소수점 6자리로 자른다 (유사도에는 영향 없음) */
@@ -61,10 +64,16 @@ async function main() {
   );
   console.log("[precompute] data/vocab-embeddings.json 저장 완료");
 
-  // 3) 음식별 프로필 벡터 + 랭킹 생성
-  const rankingsDir = path.join(ROOT, "data", "rankings");
-  fs.mkdirSync(rankingsDir, { recursive: true });
+  // 3) 음식 이름도 임베딩한다. 사용자가 "김치찌개"처럼 다른 음식 이름을 넣었을 때
+  //    "찌개끼리는 비슷하다"를 잡아내려면 재료만으로는 부족하기 때문이다.
+  //    (재료 사전과는 분리해서 관리한다. 사전에 섞으면 재료 랭킹이 오염된다.)
+  console.log("[precompute] 음식 이름 임베딩 중...");
+  const nameVectors = await embedTexts(dishes.map((d) => d.name));
+  const nameMap = new Map<string, number[]>();
+  dishes.forEach((d, i) => nameMap.set(d.id, nameVectors[i]));
 
+  // 4) 음식별 프로필 벡터 계산
+  const profileMap = new Map<string, number[]>();
   for (const dish of dishes) {
     const ownVectors = dish.ingredients
       .map((ing) => vocabMap.get(ing))
@@ -74,8 +83,16 @@ async function main() {
       console.warn(`[precompute] ${dish.name}: 재료 임베딩이 없어 건너뜀`);
       continue;
     }
+    profileMap.set(dish.id, averageVector(ownVectors));
+  }
 
-    const profile = averageVector(ownVectors);
+  // 5) 랭킹 생성 (재료 사전 + 다른 음식)
+  const rankingsDir = path.join(ROOT, "data", "rankings");
+  fs.mkdirSync(rankingsDir, { recursive: true });
+
+  for (const dish of dishes) {
+    const profile = profileMap.get(dish.id);
+    if (!profile) continue;
 
     const ranked = vocab
       .map((word) => ({
@@ -85,14 +102,46 @@ async function main() {
       }))
       .sort((a, b) => b.similarity - a.similarity);
 
+    // 다른 음식들과의 유사도. 이름 유사도와 재료 프로필 유사도를 절반씩 섞는다.
+    // (가중치 비교 결과 5:5 가 가장 자연스러웠다. 이름만 쓰면 떡볶이-된장찌개가
+    //  2위로 붙고, 재료만 쓰면 0.96~0.99 에 뭉쳐서 변별이 되지 않는다.)
+    const dishRanked: DishSimilarity[] = dishes
+      .filter((other) => other.id !== dish.id && profileMap.has(other.id))
+      .map((other) => {
+        const nameSimilarity = cosineSimilarity(
+          nameMap.get(dish.id)!,
+          nameMap.get(other.id)!
+        );
+        const profileSimilarity = cosineSimilarity(
+          profile,
+          profileMap.get(other.id)!
+        );
+        return {
+          dishId: other.id,
+          name: other.name,
+          similarity:
+            Math.round(
+              (NAME_WEIGHT * nameSimilarity +
+                (1 - NAME_WEIGHT) * profileSimilarity) *
+                1e6
+            ) / 1e6,
+          nameSimilarity: Math.round(nameSimilarity * 1e6) / 1e6,
+          profileSimilarity: Math.round(profileSimilarity * 1e6) / 1e6,
+        };
+      })
+      .sort((x, y) => y.similarity - x.similarity);
+
     fs.writeFileSync(
       path.join(rankingsDir, `${dish.id}.json`),
-      JSON.stringify({ dishId: dish.id, profile: round(profile), ranked })
+      JSON.stringify({ dishId: dish.id, profile: round(profile), ranked, dishRanked })
     );
     console.log(
-      `[precompute] ${dish.name} → 상위 3: ${ranked
+      `[precompute] ${dish.name} → 재료 상위3: ${ranked
         .slice(0, 3)
-        .map((r) => `${r.word}(${r.similarity.toFixed(3)})`)
+        .map((r) => r.word)
+        .join(", ")} | 가까운 음식: ${dishRanked
+        .slice(0, 3)
+        .map((r) => r.name)
         .join(", ")}`
     );
   }

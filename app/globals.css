@@ -230,3 +230,22 @@ body {
   margin: 0;
   font-size: 14px;
 }
+
+/* ── 음식 추측 섹션 ───────────────────────────────────────────
+   재료 점수와 기준이 다르다는 걸 시각적으로도 구분해준다. */
+.board-row--dish,
+.board-header--dish {
+  background: rgba(178, 58, 46, 0.04);
+}
+
+.sub-scores {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--ink-soft);
+  letter-spacing: 0.02em;
+}
+
+.hint--tight {
+  margin: 10px 0 40px;
+}

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "node:fs";
 import path from "node:path";
 import { getAllDishes, getTodaysDish } from "@/lib/dishSelector";
-import { normalizeWord, scoreAgainstRanking } from "@/lib/similarity";
+import { normalizeWord, scoreAgainstRanking, scoreInRange } from "@/lib/similarity";
 import type { DishRanking, GuessResult } from "@/lib/types";
 
 // 랭킹 JSON은 배포 후 바뀌지 않으므로 프로세스 메모리에 캐시해둔다.
@@ -45,7 +45,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(result);
     }
 
-    // 2) 재료 이름으로 판단
     const ranking = loadRanking(dish.id);
     if (!ranking) {
       return NextResponse.json(
@@ -57,21 +56,55 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 유사도는 precompute 단계에서 전부 계산해뒀다. 런타임에는 임베딩 모델을
-    // 올리지 않으므로(용량/콜드스타트), 사전에 있는 단어만 채점할 수 있다.
+    // 2) 다른 음식 이름을 입력한 경우 — 정답은 아니지만 얼마나 가까운 음식인지
+    //    점수로 알려준다. ("김치찌개"는 된장찌개와 같은 찌개이고 재료도 많이 겹친다)
+    //    재료 조회보다 먼저 확인한다. "삼겹살"처럼 음식이면서 재료이기도 한 단어는
+    //    사용자가 정답을 맞히려고 넣었을 가능성이 높기 때문이다.
+    const guessedDish = getAllDishes().find(
+      (d) =>
+        normalizeWord(d.name) === guess ||
+        d.aliases.some((alias) => normalizeWord(alias) === guess)
+    );
+    if (guessedDish) {
+      const index = ranking.dishRanked.findIndex(
+        (d) => d.dishId === guessedDish.id
+      );
+      if (index !== -1) {
+        const entry = ranking.dishRanked[index];
+
+        // 점수 기준을 "정답 자신"까지 포함해서 잡는다. 그러지 않으면 가장 가까운
+        // 음식이 항상 100점을 받아 정답인 줄 착각하게 된다. 정답과의 유사도는
+        // 정의상 1.0 이므로 그 값을 분포의 최대값으로 넣어준다.
+        const withAnswer = (values: number[]) => [1, ...values];
+
+        const result: GuessResult = {
+          status: "dish-scored",
+          guess: rawGuess,
+          dishName: guessedDish.name,
+          score: scoreInRange(
+            entry.similarity,
+            withAnswer(ranking.dishRanked.map((d) => d.similarity))
+          ),
+          rank: index + 1,
+          totalDishes: ranking.dishRanked.length,
+          nameScore: scoreInRange(
+            entry.nameSimilarity,
+            withAnswer(ranking.dishRanked.map((d) => d.nameSimilarity))
+          ),
+          ingredientScore: scoreInRange(
+            entry.profileSimilarity,
+            withAnswer(ranking.dishRanked.map((d) => d.profileSimilarity))
+          ),
+        };
+        return NextResponse.json(result);
+      }
+    }
+
+    // 3) 재료로 채점. 유사도는 precompute 단계에서 전부 계산해뒀다. 런타임에는
+    //    임베딩 모델을 올리지 않으므로(용량/콜드스타트) 사전에 있는 단어만 채점된다.
     const cachedEntry = ranking.ranked.find((r) => normalizeWord(r.word) === guess);
     if (!cachedEntry) {
-      // 사전에 없는 단어가 사실은 다른 음식 이름이라면, 재료로 착각한 것이 아니라
-      // 정답을 틀린 것이므로 다르게 안내한다. (재료이면서 음식인 "삼겹살" 같은
-      // 단어는 위 사전 조회에서 이미 채점되므로 여기까지 오지 않는다.)
-      const isKnownDish = getAllDishes().some(
-        (d) =>
-          normalizeWord(d.name) === guess ||
-          d.aliases.some((a) => normalizeWord(a) === guess)
-      );
-      const result: GuessResult = isKnownDish
-        ? { status: "wrong-dish", guess: rawGuess }
-        : { status: "unknown", guess: rawGuess };
+      const result: GuessResult = { status: "unknown", guess: rawGuess };
       return NextResponse.json(result);
     }
 
